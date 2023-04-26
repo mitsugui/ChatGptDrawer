@@ -1,0 +1,64 @@
+﻿@page "/"
+@using ChatGptBlazorApp.Data
+@inject IJSRuntime JsRuntime
+@inject GptChatCompletionService GptChatService
+
+<PageTitle>Peça ao GPT</PageTitle>
+
+<h1>Peça ao GePeTo</h1>
+
+O que deseja fazer?
+<input class="text-input" @bind="_prompt" type="text" />
+<button class="btn btn-primary" @onclick="Enviar">Enviar</button>
+<button @onclick="StartVoiceInput">Start Voice Input</button>
+
+<p>
+    Resultado: @_resultado
+</p>
+
+<button @onclick="Executar">Executar</button>
+
+
+@code {
+    private string _prompt = "";
+    private string _resultado = "";
+
+    private async Task Enviar()
+    {
+        _resultado = await GptChatService.GetGpt4CompletionAsync(_prompt);
+        var indiceInicio = _resultado.IndexOf("function start(", StringComparison.OrdinalIgnoreCase);
+        if (indiceInicio > 0) _resultado = _resultado[indiceInicio..];
+        var indiceFim = _resultado.LastIndexOf("}", StringComparison.OrdinalIgnoreCase);
+        if (indiceFim > 0) _resultado = _resultado[..(indiceFim + 1)];
+
+        _resultado = $@"(function() {{
+    {_resultado}
+
+    start();
+}})();";
+    }
+
+    private async Task Executar()
+    {
+        await JsRuntime.InvokeVoidAsync("gpt4Interop.executeJavaScript", _resultado);
+    }
+
+    private async Task StartVoiceInput()
+    {
+        var dotNetRef = DotNetObjectReference.Create(this);
+        var isSupported = await JsRuntime.InvokeAsync<bool>("gpt4Interop.startSpeechRecognition", dotNetRef);
+
+        if (!isSupported)
+        {
+            Console.WriteLine("Speech recognition is not supported in this browser.");
+        }
+    }
+
+
+    [JSInvokable("SetVoiceInput")]
+    public void SetVoiceInput(string transcript)
+    {
+        _prompt = transcript;
+        InvokeAsync(StateHasChanged);
+    }
+}
